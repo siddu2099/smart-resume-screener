@@ -100,6 +100,6 @@ smart-resume-screener/
 
 - **Phase 1 — Project Initialization**: Completed
 - **Phase 2 — Database Models & Schemas**: Completed
-- **Phase 3 — PDF Extraction & Parsers**: Pending
+- **Phase 3 — PDF Extraction & Parsers**: Completed
 - **Phase 4 — LLM Integration & Matching**: Pending
 - **Phase 5 — API & Streamlit Dashboard**: Pending
