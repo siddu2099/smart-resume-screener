@@ -96,6 +96,20 @@ smart-resume-screener/
     └── test_matching.py    # Matcher service tests (TODO)
 ```
 
+## Deterministic Matching Engine (Phase 7)
+
+The candidate-job matching engine operates 100% deterministically without LLM or database dependencies:
+
+- **Skill Score**: `0.80 * required_skill_coverage + 0.20 * preferred_skill_coverage`
+- **Experience Score**: `(candidate_years / required_years) * 100` (clamped to 100; contiguous date ranges merged)
+- **Education Score**: Binary `100.0` if requirement matched or unstated, `0.0` otherwise.
+- **Deterministic Final Score**: `0.60 * skill_score + 0.30 * experience_score + 0.10 * education_score`
+- **Status Rules**:
+  - `STRONG`: `final_score >= 80.0` AND `required_skill_coverage >= 80%`
+  - `POTENTIAL`: `final_score >= 60.0` AND `required_skill_coverage >= 50%`
+  - `WEAK`: Otherwise
+- **Note**: `semantic_score` is set to `0.0` baseline; LLM semantic matching is deferred.
+
 ## Development Status
 
 - **Phase 1 — Project Initialization**: Completed
@@ -104,4 +118,5 @@ smart-resume-screener/
 - **Phase 4 — Pydantic Domain Schemas**: Completed
 - **Phase 5 — LLM Resume Extraction**: Completed
 - **Phase 6 — LLM Job Description Extraction**: Completed
-- **Phase 7 — Candidate-Job Matching & Scoring**: Pending
+- **Phase 7 — Deterministic Candidate-Job Matching Engine**: Completed
+- **Phase 8 — LLM Semantic Analysis & Shortlist Dashboard**: Pending
