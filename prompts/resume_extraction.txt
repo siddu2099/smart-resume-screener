@@ -1,0 +1,2 @@
+# Resume Extraction Prompt Template
+# TODO: Implement prompt instructions for extracting structured JSON from raw resume text in Phase 4.

@@ -1,0 +1,2 @@
+# Semantic Matching Prompt Template
+# TODO: Implement prompt instructions for candidate-job semantic alignment evaluation and justification in Phase 4.

@@ -1,0 +1,2 @@
+# Job Extraction Prompt Template
+# TODO: Implement prompt instructions for extracting structured requirements from job descriptions in Phase 4.
