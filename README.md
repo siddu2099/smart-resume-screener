@@ -103,4 +103,5 @@ smart-resume-screener/
 - **Phase 3 — PDF Extraction & Parsers**: Completed
 - **Phase 4 — Pydantic Domain Schemas**: Completed
 - **Phase 5 — LLM Resume Extraction**: Completed
-- **Phase 6 — API & Streamlit Dashboard**: Pending
+- **Phase 6 — LLM Job Description Extraction**: Completed
+- **Phase 7 — Candidate-Job Matching & Scoring**: Pending
