@@ -22,38 +22,37 @@ def normalize_skill(skill: str) -> str:
 def parse_experience_duration_years(duration_str: Optional[str], current_year: int = 2026) -> float:
     """Conservatively parse an experience duration string into years.
 
-    Supports formats:
-    - "YYYY - YYYY" (e.g. "2020 - 2023" -> 3.0)
-    - "YYYY - Present" / "YYYY - Current" (e.g. "2023 - Present" -> 3.0)
-    - "X years" / "X yr" / "X yrs" (e.g. "2 years" -> 2.0)
-    - "X months" / "X mo" (e.g. "18 months" -> 1.5)
+    Supported formats:
+    - "YYYY - YYYY" / "YYYY to YYYY" (e.g. "2022 - 2024" -> 2.0 years using approximate calendar-year model)
+    - "YYYY - Present" / "YYYY - Current" (e.g. "2023 - Present" -> 3.0 years using current_year)
+    - "X years" / "X yrs" / "X yr" (e.g. "2 years" -> 2.0)
+    - "X months" / "X mos" / "X mo" (e.g. "18 months" -> 1.5)
+
+    Unparseable, ambiguous, or vague strings (e.g. "strong experience", "several years") return 0.0.
     """
     if not duration_str:
         return 0.0
 
     duration_clean = duration_str.strip().lower()
 
-    # Match year range: "YYYY - YYYY" or "YYYY - Present"
-    range_match = re.search(r"(\b20\d{2}|\b19\d{2})\s*[-–—to]+\s*(present|current|\b20\d{2}|\b19\d{2})", duration_clean)
+    # 1. Match year range: "YYYY - YYYY" or "YYYY - Present" / "YYYY to YYYY"
+    range_match = re.search(
+        r"\b(19\d{2}|20\d{2})\s*(?:[-–—]|to)\s*(present|current|19\d{2}|20\d{2})\b",
+        duration_clean,
+    )
     if range_match:
         start_yr = int(range_match.group(1))
         end_str = range_match.group(2)
         end_yr = current_year if end_str in ("present", "current") else int(end_str)
         return float(max(0, end_yr - start_yr))
 
-    # Match standalone single year "YYYY"
-    single_year = re.search(r"\b(20\d{2}|19\d{2})\b", duration_clean)
-    if single_year and not re.search(r"\d+\s*(year|yr|month|mo)", duration_clean):
-        start_yr = int(single_year.group(1))
-        return float(max(0, current_year - start_yr))
-
-    # Match "X years" / "X yrs"
-    years_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr\b)", duration_clean)
+    # 2. Match "X years" / "X yrs" / "X yr"
+    years_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr)\b", duration_clean)
     if years_match:
         return float(years_match.group(1))
 
-    # Match "X months" / "X mos"
-    months_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:months?|mos?|mo\b)", duration_clean)
+    # 3. Match "X months" / "X mos" / "X mo"
+    months_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:months?|mos?|mo)\b", duration_clean)
     if months_match:
         return float(months_match.group(1)) / 12.0
 
@@ -61,7 +60,7 @@ def parse_experience_duration_years(duration_str: Optional[str], current_year: i
 
 
 def calculate_total_experience_years(experiences: list[ExperienceSchema], current_year: int = 2026) -> float:
-    """Calculate candidate's total experience in years by parsing and merging overlapping year intervals."""
+    """Calculate candidate's total experience in years by parsing and merging overlapping/contiguous year intervals."""
     intervals: list[tuple[int, int]] = []
     standalone_years = 0.0
 
@@ -70,7 +69,10 @@ def calculate_total_experience_years(experiences: list[ExperienceSchema], curren
             continue
         duration_clean = exp.duration.strip().lower()
 
-        range_match = re.search(r"(\b20\d{2}|\b19\d{2})\s*[-–—to]+\s*(present|current|\b20\d{2}|\b19\d{2})", duration_clean)
+        range_match = re.search(
+            r"\b(19\d{2}|20\d{2})\s*(?:[-–—]|to)\s*(present|current|19\d{2}|20\d{2})\b",
+            duration_clean,
+        )
         if range_match:
             start_yr = int(range_match.group(1))
             end_str = range_match.group(2)
@@ -85,7 +87,7 @@ def calculate_total_experience_years(experiences: list[ExperienceSchema], curren
     if not intervals:
         return round(standalone_years, 2)
 
-    # Sort and merge overlapping date intervals
+    # Sort and merge overlapping or contiguous date intervals
     intervals.sort(key=lambda x: x[0])
     merged: list[tuple[int, int]] = []
     for start, end in intervals:
@@ -132,12 +134,19 @@ def calculate_experience_score(candidate: CandidateProfile, job: JobProfile) -> 
     return round(max(0.0, min(100.0, score)), 2), candidate_years
 
 
+GENERIC_EDU_TOKENS = {
+    "in", "or", "and", "a", "an", "the", "field", "related", "with", "of",
+    "degree", "bachelor", "bachelors", "bachelor's", "master", "masters",
+    "master's", "bs", "ba", "ms", "ma", "phd", "doctorate", "diploma", "major"
+}
+
+
 def calculate_education_score(candidate: CandidateProfile, job: JobProfile) -> float:
     """Calculate education match score (0.0 or 100.0).
 
     Rules:
     - If job.education is None or empty: score = 100.0.
-    - If job.education exists: score = 100.0 if candidate education matches degree/field keywords, else 0.0.
+    - If job.education exists: score = 100.0 if candidate degree matches degree/field keywords, else 0.0.
     """
     if not job.education or not job.education.strip():
         return 100.0
@@ -146,20 +155,25 @@ def calculate_education_score(candidate: CandidateProfile, job: JobProfile) -> f
         return 0.0
 
     req_edu_norm = job.education.strip().lower()
-
-    keywords = set(re.findall(r"\b[a-z0-9\.#+]+\b", req_edu_norm))
-    keywords.difference_update({"in", "or", "and", "a", "an", "the", "field", "related", "with"})
+    req_tokens = set(re.findall(r"\b[a-z0-9\.#+]+\b", req_edu_norm))
+    req_field_keywords = req_tokens - GENERIC_EDU_TOKENS
 
     for edu in candidate.education:
-        cand_str = f"{edu.degree or ''} {edu.institution or ''}".strip().lower()
-        if not cand_str:
+        if not edu.degree or not edu.degree.strip():
             continue
-        if req_edu_norm in cand_str or cand_str in req_edu_norm:
+        cand_degree_norm = edu.degree.strip().lower()
+
+        if req_edu_norm in cand_degree_norm or cand_degree_norm in req_edu_norm:
             return 100.0
-        cand_words = set(re.findall(r"\b[a-z0-9\.#+]+\b", cand_str))
-        matched_kw = keywords.intersection(cand_words)
-        if matched_kw:
-            return 100.0
+
+        cand_words = set(re.findall(r"\b[a-z0-9\.#+]+\b", cand_degree_norm))
+
+        if req_field_keywords:
+            if req_field_keywords.intersection(cand_words):
+                return 100.0
+        else:
+            if req_tokens.intersection(cand_words):
+                return 100.0
 
     return 0.0
 
@@ -224,11 +238,12 @@ def match_candidate_to_job(
 
     if dedup_preferred:
         pref_score = (len(matched_preferred) / len(dedup_preferred)) * 100.0
+        skill_score = 0.80 * req_score + 0.20 * pref_score
     else:
-        # If job specifies no preferred skills, match required score so unrequested preferred skills don't distort score
-        pref_score = req_score
+        pref_score = 0.0
+        skill_score = req_score
 
-    skill_score = round(max(0.0, min(100.0, 0.80 * req_score + 0.20 * pref_score)), 2)
+    skill_score = round(max(0.0, min(100.0, skill_score)), 2)
 
     # --- 2. Experience Matching ---
     exp_score, candidate_years = calculate_experience_score(candidate, job)
