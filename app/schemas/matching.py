@@ -31,6 +31,13 @@ class ScoreBreakdown(BaseModel):
     final_score: float = Field(ge=0.0, le=100.0)
 
 
+class MatchRequest(BaseModel):
+    """API request schema for candidate-job matching evaluation."""
+
+    candidate_id: int
+    job_id: int
+
+
 class MatchResult(BaseModel):
     """Complete candidate-job match result schema."""
 

@@ -1,5 +1,6 @@
 """Pydantic v2 schemas for candidate/resume structured data contracts."""
 
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -34,3 +35,17 @@ class CandidateProfile(BaseModel):
     skills: list[str] = Field(default_factory=list)
     experience: list[ExperienceSchema] = Field(default_factory=list)
     education: list[EducationSchema] = Field(default_factory=list)
+
+
+class CandidateResponse(BaseModel):
+    """API response schema for candidate ingestion and retrieval."""
+
+    candidate_id: int
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    skills: list[str] = Field(default_factory=list)
+    experience: list[ExperienceSchema] = Field(default_factory=list)
+    education: list[EducationSchema] = Field(default_factory=list)
+    resume_filename: Optional[str] = None
+    created_at: Optional[datetime] = None
