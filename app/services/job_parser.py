@@ -1,3 +1,4 @@
+import re
 """Structured job description extraction service using LLM output and Pydantic validation."""
 
 import json
@@ -12,6 +13,56 @@ from app.services.llm_service import LLMService, LLMServiceError
 from app.services.resume_parser import _clean_json_response
 
 logger = logging.getLogger(__name__)
+
+
+
+def _clean_skills(skills: list[str]) -> list[str]:
+    """Post-process extracted skill lists to ensure atomic, concise technical skills."""
+    if not skills or not isinstance(skills, list):
+        return []
+
+    cleaned: list[str] = []
+    prose_patterns = [
+        r'^(?:understanding\s+(?:and/or|or)?\s*experience\s+(?:of|in)\s+)',
+        r'^(?:understanding\s+of\s+(?:one/more\s+)?(?:programming\s+languages|data\s+analytics\s+or\s+databases|databases)?\s*(?:such\s+as)?\s*)',
+        r'^(?:experience\s+(?:of|in|with)\s+)',
+        r'^(?:working\s+knowledge\s+of\s+)',
+        r'^(?:knowledge\s+of\s+)',
+        r'^(?:hands-on\s+experience\s+with\s+)',
+        r'^(?:ability\s+to\s+)',
+        r'^(?:such\s+as\s+)',
+    ]
+
+    for item in skills:
+        if not item or not isinstance(item, str):
+            continue
+        text = item.strip()
+        if not text:
+            continue
+
+        for pattern in prose_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+
+        preserved_slash_terms = {'ci/cd', 'tcp/ip', 'i/o', 'b2b/b2c', 'a/b'}
+        if '/' in text and text.lower() not in preserved_slash_terms and not re.search(r'(and|or|in|of|for|with)', text, re.IGNORECASE):
+            parts = [p.strip() for p in text.split('/') if p.strip()]
+            for p in parts:
+                if p and p not in cleaned:
+                    cleaned.append(p)
+        elif text.lower().startswith('software development'):
+            if ' and ' in text.lower():
+                subparts = [p.strip() for p in re.split(r'\s+and\s+', text, flags=re.IGNORECASE) if p.strip()]
+                for sp in subparts:
+                    if sp and sp not in cleaned:
+                        cleaned.append(sp.title())
+            else:
+                if text not in cleaned:
+                    cleaned.append(text)
+        else:
+            if text and text not in cleaned:
+                cleaned.append(text)
+
+    return cleaned
 
 
 class JobParsingError(Exception):
@@ -81,6 +132,12 @@ def extract_job_profile(
         raise JobParsingError(
             f"Expected JSON object dictionary from LLM, got {type(parsed_data).__name__}"
         )
+
+    if isinstance(parsed_data, dict):
+        if "required_skills" in parsed_data and isinstance(parsed_data["required_skills"], list):
+            parsed_data["required_skills"] = _clean_skills(parsed_data["required_skills"])
+        if "preferred_skills" in parsed_data and isinstance(parsed_data["preferred_skills"], list):
+            parsed_data["preferred_skills"] = _clean_skills(parsed_data["preferred_skills"])
 
     try:
         profile = JobProfile.model_validate(parsed_data)

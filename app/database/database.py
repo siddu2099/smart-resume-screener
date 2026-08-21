@@ -1,6 +1,9 @@
 """Database infrastructure, engine setup, and session management."""
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 from typing import Generator
 
 from sqlalchemy import create_engine

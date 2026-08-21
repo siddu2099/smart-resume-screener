@@ -222,3 +222,52 @@ def test_no_database_side_effects_on_job_parsing():
 
     root_db = Path("resume_screener.db")
     assert not root_db.exists(), "Job parsing unexpectedly created a database file!"
+
+
+def test_regression_atomic_skill_extraction_and_responsibility_extraction():
+    """Regression test verifying atomic skill separation (Java/.NET/Python, SQL/Oracle/Teradata)
+    and responsibility extraction for JDs without explicit 'Responsibilities:' header.
+    """
+    raw_llm_payload = {
+        "title": "Consulting – Technology Analyst",
+        "required_skills": [
+            "understanding and/or experience of software development best practices and software development life cycle",
+            "understanding of one/more programming languages such as Java/.Net/Python",
+            "understanding of data analytics or databases such as SQL/Oracle/Teradata"
+        ],
+        "preferred_skills": [],
+        "experience_required": None,
+        "education": "BE - B.Tech / IT, Computer Science or Circuit branches",
+        "responsibilities": [
+            "Technology implementation support",
+            "Enterprise and Industry application implementation",
+            "Governance Risk Compliance (GRC) Technology"
+        ]
+    }
+
+    mock_service = MagicMock(spec=LLMService)
+    mock_service.generate_completion.return_value = json.dumps(raw_llm_payload)
+
+    jd_text = """Consulting – Technology Analyst
+    Technology implementation support, Enterprise and Industry application implementation, Governance Risk Compliance (GRC) Technology.
+    Education: BE - B.Tech / IT, Computer Science or Circuit branches
+    Requirements:
+    - understanding and/or experience of software development best practices and software development life cycle
+    - understanding of one/more programming languages such as Java/.Net/Python
+    - understanding of data analytics or databases such as SQL/Oracle/Teradata
+    """
+
+    profile = extract_job_profile(jd_text, llm_service=mock_service)
+
+    assert profile.title == "Consulting – Technology Analyst"
+    assert "Java" in profile.required_skills
+    assert ".Net" in profile.required_skills or ".NET" in profile.required_skills
+    assert "Python" in profile.required_skills
+    assert "SQL" in profile.required_skills
+    assert "Oracle" in profile.required_skills
+    assert "Teradata" in profile.required_skills
+    assert "understanding of one/more programming languages such as Java/.Net/Python" not in profile.required_skills
+    assert len(profile.responsibilities) == 3
+    assert "Technology implementation support" in profile.responsibilities
+    assert profile.experience_required is None or profile.experience_required == 0
+    assert profile.preferred_skills == []

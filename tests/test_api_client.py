@@ -227,3 +227,18 @@ def test_frontend_zero_backend_imports():
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
                     assert not node.module.startswith("app"), f"Forbidden import from '{node.module}' in {py_file.name}"
+
+
+def test_api_timeout_env_configuration(monkeypatch):
+    """Test API_TIMEOUT environment variable configuration."""
+    monkeypatch.setenv("API_TIMEOUT", "150.0")
+    client = ScreenerAPIClient()
+    assert client.timeout == 150.0
+
+def test_api_timeout_custom_and_default():
+    """Test explicit timeout parameter and default 120.0s timeout."""
+    client_default = ScreenerAPIClient()
+    assert client_default.timeout == 120.0
+
+    client_custom = ScreenerAPIClient(timeout=45.0)
+    assert client_custom.timeout == 45.0

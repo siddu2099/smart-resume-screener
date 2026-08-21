@@ -41,9 +41,9 @@ class LLMService:
         timeout_val = timeout
         if timeout_val is None:
             try:
-                timeout_val = float(os.getenv("OLLAMA_TIMEOUT", "60"))
+                timeout_val = float(os.getenv("OLLAMA_TIMEOUT", "120.0"))
             except ValueError:
-                timeout_val = 60.0
+                timeout_val = 120.0
         self.timeout = timeout_val
 
     def generate_completion(
@@ -78,7 +78,8 @@ class LLMService:
 
         start_time = time.time()
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            httpx_timeout = httpx.Timeout(self.timeout, connect=10.0)
+            with httpx.Client(timeout=httpx_timeout) as client:
                 response = client.post(url, json=payload)
                 response.raise_for_status()
                 data = response.json()

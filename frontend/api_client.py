@@ -10,7 +10,7 @@ from typing import Any, Optional
 import httpx
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
-DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
 class APIClientError(Exception):
@@ -44,7 +44,7 @@ class APIHTTPError(APIClientError):
 class ScreenerAPIClient:
     """HTTP client wrapper for Smart Resume Screener REST API endpoints."""
 
-    def __init__(self, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT_SECONDS):
+    def __init__(self, base_url: Optional[str] = None, timeout: Optional[float] = None):
         """Initialize API client.
 
         Args:
@@ -53,13 +53,26 @@ class ScreenerAPIClient:
         """
         env_url = os.getenv("API_BASE_URL")
         self.base_url = (base_url or env_url or DEFAULT_API_BASE_URL).rstrip("/")
-        self.timeout = timeout
+        if timeout is None:
+            env_timeout = os.getenv("API_TIMEOUT")
+            if env_timeout:
+                try:
+                    timeout_val = float(env_timeout)
+                except ValueError:
+                    timeout_val = DEFAULT_TIMEOUT_SECONDS
+            else:
+                timeout_val = DEFAULT_TIMEOUT_SECONDS
+        else:
+            timeout_val = float(timeout)
+
+        self.timeout = timeout_val
         self._client: Optional[httpx.Client] = None
 
     def _get_client(self) -> httpx.Client:
         """Get or create reusable httpx Client instance."""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout)
+            httpx_timeout = httpx.Timeout(self.timeout, connect=10.0)
+            self._client = httpx.Client(base_url=self.base_url, timeout=httpx_timeout)
         return self._client
 
     def close(self) -> None:

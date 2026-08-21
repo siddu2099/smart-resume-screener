@@ -1,184 +1,243 @@
-# Smart Resume Screener
+# Smart AI Resume Screener & Candidate Matcher
 
-## Overview
+> **Production-Grade Automated Candidate Evaluation & Shortlisting System**  
+> Powered by **FastAPI**, **PostgreSQL / SQLAlchemy 2.x**, **PyMuPDF**, **Ollama (`qwen2.5:7b`)**, and **Streamlit**.
 
-The Smart Resume Screener is an intelligent academic application designed to automate candidate resume screening and evaluation against job descriptions. It leverages deterministic PDF text extraction, structured information extraction, Pydantic validation, database persistence, LLM-driven semantic matching, FastAPI REST endpoints, and a Streamlit dashboard interface to deliver candidate match scoring and ranking.
+---
 
-## Architecture
+## 📌 Overview
 
-The end-to-end application pipeline follows a multi-stage flow:
+The **Smart AI Resume Screener & Candidate Matcher** is an end-to-end intelligent recruitment engine designed to automate resume parsing, job description analysis, candidate-to-job matching, and candidate shortlisting.
 
-```text
-Resume PDF Upload (Streamlit UI / POST /resumes)
-    ↓
-PDF Extraction (PyMuPDF)
-    ↓
-Resume LLM Extraction (Ollama / qwen2.5:7b)
-    ↓
-CandidateProfile Schema
-    ↓
-Database Persistence (SQLite / SQLAlchemy)
+It combines **deterministic matching algorithms** (for precise skill, experience, and education validation) with **bounded local LLM semantic analysis** (for deep experience relevance, domain suitability, and qualitative justification).
 
-Job Description Input (Streamlit UI / POST /jobs)
-    ↓
-Job LLM Extraction (Ollama / qwen2.5:7b)
-    ↓
-JobProfile Schema
-    ↓
-Database Persistence (SQLite / SQLAlchemy)
+### Key Highlights
+- **Bounded LLM Semantic Analysis**: Deterministic facts strictly override semantic explanations. The LLM can explain facts, but cannot rewrite skill classifications, required coverage ratios, or score thresholds.
+- **High-Performance Local Inference**: Integrated with local **Ollama (`qwen2.5:7b`)**, ensuring zero data privacy risk with customizable timeouts and graceful fallback if Ollama is unreachable.
+- **Enterprise Database Persistence**: Full **PostgreSQL** support via SQLAlchemy 2.x ORM with auto-fallback to local SQLite (`sqlite:///./resume_screener.db`).
+- **Interactive Streamlit Dashboard**: Clean recruiter dashboard providing tabbed navigation for uploading resumes, creating job postings, running match evaluations, and viewing candidate shortlists.
+- **Comprehensive Test Suite**: Automated unit and integration tests covering PDF parsing, entity extraction, deterministic matching, score fusion, and API endpoints.
 
-Candidate + Job Match Request (Streamlit UI / POST /matches)
-    ↓
-Deterministic Skill / Experience / Education Matching
-    +
-LLM Semantic Alignment Evaluation
-    ↓
-Deterministic Score Fusion & Status Classification
-    ↓
-MatchResult Schema
-    ↓
-Database Persistence & Shortlist Ranking (GET /jobs/{job_id}/shortlist)
+---
+
+## 🏗️ Architecture & Scoring Methodology
+
+```
+                   +------------------------+
+                   | Candidate Resume (PDF) |
+                   +-----------+------------+
+                               |
+                               v
+                       [ PyMuPDF Parser ]
+                               |
+                               v
+                  +------------+------------+
+                  |  Candidate Profile      |
+                  |  (Skills, Exp, Edu)     |
+                  +------------+------------+
+                               |
+   +---------------------------+---------------------------+
+   |                                                       |
+   v                                                       v
+[ Deterministic Matching Engine ]            [ Bounded LLM Semantic Evaluator ]
+ * Skill Score       (50%)                     * Domain Fit & Relevance  (15%)
+ * Experience Score  (25%)                     * Qualitative Strengths & Gaps
+ * Education Score   (10%)                     * Bounded Rule Guardrails
+   |                                                       |
+   +---------------------------+---------------------------+
+                               |
+                               v
+                  +------------+------------+
+                  |    Score Fusion Engine  |
+                  |  final_score (0 - 100%) |
+                  +------------+------------+
+                               |
+                               v
+                 +-------------+-------------+
+                 | Candidate Status Classifier|
+                 |  STRONG / POTENTIAL / WEAK|
+                 +-------------+-------------+
+                               |
+                               v
+                   +-----------+------------+
+                   | Database & Shortlist API|
+                   +------------------------+
 ```
 
-## Technology Stack
+### 🧮 Score Fusion Formula
+Final candidate scores are calculated deterministically across four key pillars:
 
-- **Python**: 3.11+
-- **API Framework**: FastAPI
+`Final Score = (0.50 * Skill Score) + (0.25 * Experience Score) + (0.10 * Education Score) + (0.15 * Semantic Score)`
+
+1. **Skill Score (50%)**: Weighted calculation based on 80% Required Skill coverage + 20% Preferred Skill coverage.
+2. **Experience Score (25%)**: Calculates candidate total work experience by parsing and merging overlapping calendar date intervals, scored against the job's minimum experience requirement.
+3. **Education Score (10%)**: Validates degree levels and field keywords against job prerequisites (100.0 if met, 0.0 otherwise).
+4. **Semantic Score (15%)**: Bounded LLM evaluation (0 - 100) focusing on domain alignment, role relevance, and qualitative insights.
+
+### 📊 Candidate Classification Thresholds
+
+| Classification | Score Threshold | Required Skill Coverage | Description |
+| :--- | :--- | :--- | :--- |
+| **STRONG** | >= 80.0% | >= 80.0% | Exceptional match; strongly recommended for immediate interview. |
+| **POTENTIAL** | >= 60.0% | >= 50.0% | Good candidate meeting baseline prerequisites; worth secondary review. |
+| **WEAK** | < 60.0% | < 50.0% | Insufficient skill coverage or overall score below hiring threshold. |
+
+*Note: Required skill coverage strictly bounds status classification regardless of the semantic score.*
+
+---
+
+## 📁 Repository Structure
+
+```
+resume-screener/
+├── app/
+│   ├── api/                  # FastAPI REST endpoints
+│   │   ├── jobs.py           # Job posting ingestion
+│   │   ├── matching.py       # Candidate-job matching & shortlisting
+│   │   └── resumes.py        # PDF resume upload & parsing
+│   ├── database/             # Database connection & session lifecycle
+│   │   └── database.py       # SQLAlchemy engine & Base model initialization
+│   ├── models/               # SQLAlchemy ORM models
+│   │   ├── candidate.py      # Candidate database schema
+│   │   ├── job.py            # Job posting database schema
+│   │   └── match.py          # Match evaluation database schema
+│   ├── schemas/              # Pydantic v2 request/response schemas
+│   │   ├── job.py            # Job profile schemas
+│   │   ├── matching.py       # Match request & result schemas
+│   │   └── resume.py         # Candidate profile schemas
+│   ├── services/             # Core business logic
+│   │   ├── candidate_service.py # Candidate PDF persistence & service logic
+│   │   ├── job_parser.py     # Job description parser
+│   │   ├── job_service.py     # Job persistence service
+│   │   ├── llm_service.py     # Local Ollama client with fallback
+│   │   ├── match_service.py   # Match persistence & shortlist fetcher
+│   │   ├── matcher.py         # Deterministic score fusion engine
+│   │   ├── pdf_parser.py     # PyMuPDF text extraction
+│   │   ├── resume_parser.py  # Resume profile extractor
+│   │   └── semantic_matcher.py # Bounded LLM semantic evaluator
+│   └── main.py               # FastAPI entry point & lifespan handler
+├── frontend/
+│   ├── api_client.py         # ScreenerAPIClient wrapper for REST API
+│   └── dashboard.py          # Streamlit UI application
+├── prompts/                  # LLM extraction & evaluation prompt templates
+├── tests/                    # Unit and integration test suite
+├── .env                      # Environment configuration file
+├── .gitignore                # Git ignore rules
+├── requirements.txt          # Python dependencies
+└── README.md                 # Project documentation
+```
+
+---
+
+## 🛠️ Tech Stack
+
+- **Backend Framework**: Python 3.10+, [FastAPI](https://fastapi.tiangolo.com/), Uvicorn
+- **Frontend UI**: [Streamlit](https://streamlit.io/)
+- **Database ORM**: PostgreSQL via [SQLAlchemy 2.x](https://www.sqlalchemy.org/) (`psycopg2`) with auto-fallback to SQLite
+- **PDF Parsing**: PyMuPDF (`fitz`)
 - **Data Validation**: Pydantic v2
-- **ORM / Database**: SQLAlchemy 2.x & SQLite
-- **PDF Extraction**: PyMuPDF (`fitz`)
-- **LLM Engine**: Ollama (`qwen2.5:7b`)
-- **HTTP Client**: `httpx`
-- **Frontend**: Streamlit
-- **Testing**: pytest
+- **AI / LLM Inference**: [Ollama](https://ollama.com/) running `qwen2.5:7b` (with heuristic fallback)
+- **Testing**: `pytest`, `httpx`
 
-## Project Structure
+---
 
-```text
-smart-resume-screener/
-│
-├── README.md               # Project documentation
-├── .gitignore              # Git ignore rules
-├── requirements.txt        # Python dependencies
-├── .env.example            # Environment variables configuration template
-│
-├── app/                    # Main application package
-│   ├── __init__.py
-│   ├── main.py             # FastAPI entry point & lifespan setup
-│   │
-│   ├── api/                # API router modules
-│   │   ├── __init__.py
-│   │   ├── resumes.py      # Resume ingestion endpoint (POST /resumes)
-│   │   ├── jobs.py         # Job description endpoint (POST /jobs)
-│   │   └── matching.py     # Matching & shortlist endpoints (POST /matches, GET /shortlist)
-│   │
-│   ├── schemas/            # Pydantic data contracts
-│   │   ├── __init__.py
-│   │   ├── resume.py       # Candidate profile & API schemas
-│   │   ├── job.py          # Job profile & API schemas
-│   │   └── matching.py     # Match result & Shortlist schemas
-│   │
-│   ├── models/             # SQLAlchemy ORM models
-│   │   ├── __init__.py
-│   │   ├── candidate.py    # Candidate, Skill, Experience, Education models
-│   │   ├── job.py          # Job posting model
-│   │   └── match.py        # Candidate-Job Match model
-│   │
-│   ├── services/           # Core business logic services
-│   │   ├── __init__.py
-│   │   ├── pdf_parser.py   # PyMuPDF text parser
-│   │   ├── resume_parser.py# Structured resume extraction service
-│   │   ├── job_parser.py   # Job description extraction service
-│   │   ├── llm_service.py  # Ollama LLM integration wrapper
-│   │   ├── matcher.py      # Deterministic scoring & fusion engine
-│   │   ├── semantic_matcher.py # LLM semantic matching service
-│   │   ├── candidate_service.py # Candidate orchestration service
-│   │   ├── job_service.py  # Job orchestration service
-│   │   └── match_service.py# Match orchestration & shortlist service
-│   │
-│   └── database/           # Database configuration
-│       ├── __init__.py
-│       └── database.py     # Engine, session, and init_db setup
-│
-├── frontend/               # Streamlit frontend package
-│   ├── __init__.py
-│   ├── api_client.py       # Typed REST API client wrapper (httpx)
-│   └── dashboard.py        # Multi-tab Streamlit dashboard UI
-│
-├── prompts/                # LLM extraction & matching prompt templates
-│   ├── resume_extraction.txt
-│   ├── job_extraction.txt
-│   └── semantic_matching.txt
-│
-└── tests/                  # Automated test suite
-    ├── __init__.py
-    ├── test_api.py         # Health check tests
-    ├── test_pdf_parser.py  # PDF parser unit tests
-    ├── test_resume_parser.py # Resume extraction unit tests
-    ├── test_job_parser.py  # Job extraction unit tests
-    ├── test_llm_service.py # LLM service unit tests
-    ├── test_matching.py    # Deterministic matcher tests
-    ├── test_semantic_matcher.py # Semantic matcher unit tests
-    ├── test_phase9_integration.py # End-to-end API integration tests
-    └── test_api_client.py  # Frontend API client tests
+## ⚙️ Configuration & Environment Variables
+
+Copy or edit the `.env` file in the root directory to configure the environment:
+
+```ini
+# Database Connection URL (PostgreSQL or SQLite fallback)
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/resume_screener
+
+# Ollama LLM Connection Settings
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_TIMEOUT=120.0
+
+# API Client Settings (Streamlit Frontend)
+API_BASE_URL=http://127.0.0.1:8000
+API_TIMEOUT=120.0
 ```
 
-## How to Run
+---
 
-### 1. Run Automated Test Suite (pytest)
-```powershell
-.venv\Scripts\python -m pytest
+## 🚀 Quickstart Guide
+
+### 1. Prerequisites
+- **Python 3.10+** installed
+- **Ollama** (optional, recommended for full semantic evaluation):
+  ```bash
+  ollama pull qwen2.5:7b
+  ```
+
+### 2. Installation
+Clone the repository and set up a virtual environment:
+
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+# On Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+# On Linux/macOS:
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-### 2. Local End-to-End Execution Workflow
+### 3. Run the Backend API
+Start the FastAPI server:
 
-#### Terminal 1 — Start Local Ollama LLM Server
-Ensure Ollama is installed and run:
-```powershell
-ollama serve
-ollama pull qwen2.5:7b
+```bash
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+- API Documentation (Swagger UI): [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Health Check: `GET http://127.0.0.1:8000/health`
+
+### 4. Run the Streamlit Dashboard
+In a separate terminal window:
+
+```bash
+streamlit run frontend/dashboard.py
+```
+- Streamlit Web App: [http://localhost:8501](http://localhost:8501)
+
+---
+
+## 🌐 API Reference
+
+### Resumes (`/resumes`)
+- `POST /resumes`: Upload candidate resume (PDF format). Extracts candidate profile and saves to database.
+
+### Jobs (`/jobs`)
+- `POST /jobs`: Submit job description text. Extracts job profile (skills, experience, education) and saves to database.
+
+### Matching & Shortlisting (`/matches`)
+- `POST /matches`: Match a specific `candidate_id` against a `job_id`. Performs score fusion and persists match evaluation.
+- `GET /matches/{match_id}`: Retrieve stored match result details.
+- `GET /jobs/{job_id}/shortlist`: Retrieve candidate shortlist for a job, ranked deterministically by `final_score DESC, candidate_id ASC`.
+
+---
+
+## 🧪 Running Tests
+
+Execute the complete pytest suite to verify system integrity:
+
+```bash
+pytest -v
 ```
 
-#### Terminal 2 — Start FastAPI Backend
-```powershell
-.venv\Scripts\python -m uvicorn app.main:app --reload
-```
-Interactive API documentation will be available at `http://127.0.0.1:8000/docs`.
+Tests cover:
+- PDF text extraction (`test_pdf_parser.py`)
+- Resume & job entity parsing (`test_resume_parser.py`, `test_job_parser.py`)
+- Deterministic matcher & score fusion (`test_matching.py`)
+- Bounded semantic matcher (`test_semantic_matcher.py`)
+- Database ORM operations (`test_database.py`)
+- API endpoints & frontend client (`test_api.py`, `test_api_client.py`)
+- End-to-end integration workflows (`test_phase9_integration.py`)
 
-#### Terminal 3 — Start Streamlit Dashboard UI
-```powershell
-# Optional: Set custom API base URL if backend runs on a different port/host
-# $env:API_BASE_URL="http://127.0.0.1:8000"
+---
 
-.venv\Scripts\python -m streamlit run frontend/dashboard.py
-```
-The Streamlit dashboard will open automatically in your browser at `http://localhost:8501`.
+## 📄 License
 
-## Streamlit Dashboard Workflow
-
-1. **📤 Resume Upload**: Upload a candidate PDF resume. The UI sends the file to `POST /resumes` and displays candidate details, skills, experience, and education.
-2. **💼 Job Posting**: Paste a job description string. The UI sends text to `POST /jobs` and displays required vs. preferred skills, experience requirements, and responsibilities.
-3. **⚖️ Match Evaluation**: Input Candidate ID and Job ID. The UI calls `POST /matches` and displays score metrics, qualification status badge (Strong/Potential/Weak), matched/missing required skills, strengths, gaps, and evaluation justification.
-4. **🏆 Shortlist Dashboard**: Input Job ID. The UI calls `GET /jobs/{job_id}/shortlist` and displays candidate rankings strictly in backend-authoritative order.
-
-## REST API Endpoints
-
-- `GET /health`: Basic health check endpoint.
-- `POST /resumes`: Multipart PDF resume upload; validates PDF, extracts structured candidate data, and persists candidate record.
-- `POST /jobs`: Ingest raw job description text; extracts structured job posting data and persists job record.
-- `POST /matches`: Evaluate candidate against job using deterministic matching and LLM semantic alignment. Fuses scores and upserts match evaluation record. Returns `503 Service Unavailable` without writing DB records if semantic evaluation fails.
-- `GET /matches/{match_id}`: Retrieve persisted candidate-job match evaluation by match ID.
-- `GET /jobs/{job_id}/shortlist`: Retrieve ranked candidate shortlist for job posting, sorted deterministically by `final_score` DESC and `candidate_id` ASC as tie-breaker.
-
-## Development Status
-
-- **Phase 1 — Project Initialization**: Completed
-- **Phase 2 — Database Models & Schemas**: Completed
-- **Phase 3 — PDF Extraction & Parsers**: Completed
-- **Phase 4 — Pydantic Domain Schemas**: Completed
-- **Phase 5 — LLM Resume Extraction**: Completed
-- **Phase 6 — LLM Job Description Extraction**: Completed
-- **Phase 7 — Deterministic Candidate-Job Matching Engine**: Completed
-- **Phase 8 — LLM Semantic Analysis & Score Fusion**: Completed
-- **Phase 9 — Application API, Persistence Integration & Shortlisting**: Completed
-- **Phase 10 — Streamlit Dashboard & End-to-End UI**: Completed
+Distributed under the MIT License. See `LICENSE` for details.

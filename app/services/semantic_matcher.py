@@ -1,6 +1,7 @@
 """LLM-driven semantic candidate-job matching evaluation service."""
 
 import json
+import re
 import logging
 from pathlib import Path
 from typing import Optional, Union
@@ -13,6 +14,119 @@ from app.schemas.resume import CandidateProfile
 from app.services.llm_service import LLMService, LLMServiceError
 
 logger = logging.getLogger(__name__)
+
+
+
+def sanitize_semantic_explanation(
+    text: str,
+    required_skills: list[str],
+    missing_skills: list[str],
+    has_education: bool,
+) -> str:
+    """Sanitize LLM semantic text output against deterministic facts.
+
+    Ensures:
+    - Required skills are never described as preferred.
+    - False claims of no education requirement are stripped when an education requirement exists.
+    """
+    if not text or not isinstance(text, str):
+        return text
+
+    result = text
+
+    # Correct any misclassification of required skills as preferred
+    for s in required_skills:
+        if not s or not s.strip():
+            continue
+        s_clean = s.strip()
+        # Case 1: "Skill, which is a preferred skill" -> "Skill, which is a required skill"
+        pattern1 = re.compile(r'(\b' + re.escape(s_clean) + r'\b[^.!\n]*?)\bpreferred(\s+skill|\s+qualification|\s+requirement)?\b', re.IGNORECASE)
+        result = pattern1.sub(r'\1required\2', result)
+
+        # Case 2: "preferred skill Skill" -> "required skill Skill"
+        pattern2 = re.compile(r'\bpreferred(\s+skill|\s+qualification|\s+requirement)?\b([^.!\n]*?\b' + re.escape(s_clean) + r'\b)', re.IGNORECASE)
+        result = pattern2.sub(r'required\1\2', result)
+
+    # Remove 'no education requirement' claims if job has an explicit education requirement
+    if has_education:
+        result = re.sub(r'[^.!\n]*\bno\s+(?:explicit\s+)?education\s+requirement[^\n.!]*[.!]?', '', result, flags=re.IGNORECASE)
+        result = re.sub(r'\s+', ' ', result).strip()
+
+    return result.strip()
+
+
+def sanitize_semantic_result(
+    semantic_result: SemanticMatchResult,
+    job: JobProfile,
+    missing_required_skills: Optional[list[str]] = None,
+) -> SemanticMatchResult:
+    """Sanitize a SemanticMatchResult against deterministic JobProfile facts."""
+    if semantic_result is None:
+        return sanitize_semantic_result(semantic_result, job)
+
+    req_skills = job.required_skills or []
+    missing_skills = missing_required_skills or []
+    has_edu = bool(job.education and job.education.strip())
+
+    missing_norm = {s.lower() for s in missing_skills}
+
+    # Sanitize strengths list
+    clean_strengths = []
+    for st in semantic_result.strengths or []:
+        if not st or not st.strip():
+            continue
+        text = st.strip()
+        text_lower = text.lower()
+
+        # Reject claims of no education requirement if job has education requirement
+        if has_edu and ('no explicit education' in text_lower or 'no education requirement' in text_lower):
+            continue
+
+        # Reject strengths claiming candidate possesses a missing required skill
+        is_contradictory = False
+        for ms in missing_norm:
+            if ms in text_lower:
+                if any(kw in text_lower for kw in ['has ', 'proficient', 'knows', 'experience with', 'matched', 'satisfies', 'possesses', 'skilled in']):
+                    is_contradictory = True
+                    break
+        if is_contradictory:
+            continue
+
+        # Sanitize any required skill described as preferred
+        text = sanitize_semantic_explanation(text, req_skills, missing_skills, has_edu)
+        if text and text not in clean_strengths:
+            clean_strengths.append(text)
+
+    # Sanitize gaps list
+    clean_gaps = []
+    for gp in semantic_result.gaps or []:
+        if not gp or not gp.strip():
+            continue
+        text = gp.strip()
+        text_lower = text.lower()
+
+        # Reject claims of no education requirement in gaps if job has education requirement
+        if has_edu and ('no explicit education' in text_lower or 'no education requirement' in text_lower):
+            continue
+
+        text = sanitize_semantic_explanation(text, req_skills, missing_skills, has_edu)
+        if text and text not in clean_gaps:
+            clean_gaps.append(text)
+
+    # Sanitize justification text
+    clean_justification = sanitize_semantic_explanation(
+        semantic_result.justification or '',
+        req_skills,
+        missing_skills,
+        has_edu,
+    )
+
+    return SemanticMatchResult(
+        semantic_score=semantic_result.semantic_score,
+        strengths=clean_strengths,
+        gaps=clean_gaps,
+        justification=clean_justification,
+    )
 
 
 class SemanticMatchingError(Exception):

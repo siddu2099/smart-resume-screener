@@ -6,6 +6,7 @@ from typing import Optional, Union
 
 from app.schemas.job import JobProfile
 from app.schemas.matching import MatchResult, MatchStatus, ScoreBreakdown, SemanticMatchResult
+from app.services.semantic_matcher import sanitize_semantic_result, sanitize_semantic_explanation
 from app.schemas.resume import CandidateProfile, ExperienceSchema
 
 
@@ -256,6 +257,7 @@ def match_candidate_to_job(
 
     # --- 4. Semantic Result & Deterministic Score Fusion ---
     if semantic_result is not None:
+        semantic_result = sanitize_semantic_result(semantic_result, job, missing_required)
         semantic_score = round(max(0.0, min(100.0, float(semantic_result.semantic_score))), 2)
         sem_strengths = semantic_result.strengths or []
         sem_gaps = semantic_result.gaps or []

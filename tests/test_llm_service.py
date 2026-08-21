@@ -8,12 +8,13 @@ import pytest
 from app.services.llm_service import LLMService, LLMServiceError
 
 
-def test_llm_service_init_defaults():
+def test_llm_service_init_defaults(monkeypatch):
+    monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
     """Test LLMService default initialization from environment."""
     service = LLMService()
     assert service.base_url == "http://localhost:11434"
     assert service.model == "qwen2.5:7b"
-    assert service.timeout == 60.0
+    assert service.timeout == 120.0
 
 
 def test_llm_service_custom_config():
