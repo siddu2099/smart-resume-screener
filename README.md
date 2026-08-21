@@ -235,6 +235,9 @@ Tests cover:
 - Database ORM operations (`test_database.py`)
 - API endpoints & frontend client (`test_api.py`, `test_api_client.py`)
 - End-to-end integration workflows (`test_phase9_integration.py`)
+## Demo Video
+
+[▶ Watch the 2–3 minute demo](https://drive.google.com/file/d/1teq1q4SWQPyqvcjgF40d2uJ2hcmY1p2v/view?usp=sharing)
 
 ---
 
