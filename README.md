@@ -96,26 +96,30 @@ smart-resume-screener/
     └── test_matching.py    # Matcher service tests (TODO)
 ```
 
-## Deterministic Matching Engine (Phase 7.1)
+## Deterministic Matching & LLM Semantic Score Fusion (Phase 8)
 
-The candidate-job matching engine operates 100% deterministically without LLM or database dependencies:
+The matching engine integrates deterministic skill, experience, and education analysis with LLM-driven semantic experience alignment:
 
-- **Skill Score**:
-  - If preferred skills exist: `skill_score = 0.80 * required_score + 0.20 * preferred_score`
-  - Otherwise (no preferred skills in job): `skill_score = required_score` (preferred score is `0.0`, candidate is not penalized)
-- **Experience Score**:
-  - `(candidate_years / required_years) * 100` (clamped to 100; returns 100.0 if required experience is `None` or `0`).
-  - Conservative experience parsing: recognizes explicit numeric/date durations (`"YYYY - YYYY"`, `"YYYY - Present"`, `"X years"`, `"X months"`).
-  - Year-only ranges use an approximate calendar-year model (e.g., `"2022 - 2024"` ≈ 2.0 yrs).
-  - Overlapping, contiguous, duplicate, and Present date ranges are merged before calculating total experience.
-  - Vague language (e.g., `"strong experience"`, `"several years"`) contributes `0` parsed years.
-- **Education Score**: Binary `100.0` if candidate degree matches required degree/field keywords, `100.0` if job requirement is unstated/empty, `0.0` otherwise (institution name is excluded from field evaluation).
-- **Deterministic Final Score**: `0.60 * skill_score + 0.30 * experience_score + 0.10 * education_score`
-- **Status Rules**:
-  - `STRONG`: `final_score >= 80.0` AND `required_skill_coverage >= 80%`
-  - `POTENTIAL`: `final_score >= 60.0` AND `required_skill_coverage >= 50%`
-  - `WEAK`: Otherwise
-- **Note**: `semantic_score` is set to `0.0` baseline; LLM semantic matching will be implemented in Phase 8.
+### 1. Deterministic Evaluation (Phase 7.1 Engine)
+- **Skill Score**: `0.80 * required_score + 0.20 * preferred_score` if preferred skills exist; `required_score` if preferred skills are absent.
+- **Experience Score**: `(candidate_years / required_years) * 100` (conservative parsing of explicit numeric/date durations; overlapping and contiguous intervals merged).
+- **Education Score**: Binary `100.0` if candidate degree matches degree/field keywords or if job requirement is unstated/empty; `0.0` otherwise (institution name excluded).
+
+### 2. LLM Semantic Evaluation (`app/services/semantic_matcher.py`)
+- Evaluates candidate experience relevance, domain suitability, and transferable skills using local Ollama LLM (`prompts/semantic_matching.txt`).
+- **Prompt Injection Defense**: Treats CandidateProfile and JobProfile strictly as untrusted data.
+- **Validation**: All LLM outputs are cleaned of markdown fences and strictly validated via `SemanticMatchResult.model_validate(...)`. Out-of-bounds scores (`<0` or `>100`), malformed JSON, or missing fields raise `SemanticMatchingError`.
+- **Hallucination & Contradiction Safeguards**: LLM outputs cannot invent unstated skills/experience or override deterministic required skill facts. Contradictory semantic claims are filtered out during fusion.
+
+### 3. Deterministic Score Fusion Formula
+$$\text{final\_score} = 0.50 \times \text{skill\_score} + 0.25 \times \text{experience\_score} + 0.10 \times \text{education\_score} + 0.15 \times \text{semantic\_score}$$
+Rounded to 2 decimal places and clamped to $[0.0, 100.0]$.
+
+### 4. Qualification Status Classification
+Status classification is 100% deterministic and strictly controlled by required-skill coverage regardless of semantic score:
+- **STRONG**: `final_score >= 80.0` AND `required_skill_coverage >= 80%`
+- **POTENTIAL**: `final_score >= 60.0` AND `required_skill_coverage >= 50%`
+- **WEAK**: Otherwise
 
 ## Development Status
 
@@ -126,4 +130,5 @@ The candidate-job matching engine operates 100% deterministically without LLM or
 - **Phase 5 — LLM Resume Extraction**: Completed
 - **Phase 6 — LLM Job Description Extraction**: Completed
 - **Phase 7 — Deterministic Candidate-Job Matching Engine**: Completed
-- **Phase 8 — LLM Semantic Analysis & Shortlist Dashboard**: Pending
+- **Phase 8 — LLM Semantic Analysis & Score Fusion**: Completed
+

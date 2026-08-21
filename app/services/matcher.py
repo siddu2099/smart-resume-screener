@@ -1,11 +1,11 @@
-"""100% Deterministic candidate-to-job matching engine."""
+"""Candidate-to-job matching engine with deterministic score fusion."""
 
 import datetime
 import re
 from typing import Optional, Union
 
 from app.schemas.job import JobProfile
-from app.schemas.matching import MatchResult, MatchStatus, ScoreBreakdown
+from app.schemas.matching import MatchResult, MatchStatus, ScoreBreakdown, SemanticMatchResult
 from app.schemas.resume import CandidateProfile, ExperienceSchema
 
 
@@ -183,17 +183,20 @@ def match_candidate_to_job(
     job: JobProfile,
     candidate_id: Union[int, str] = 1,
     job_id: Union[int, str] = 1,
+    semantic_result: Optional[SemanticMatchResult] = None,
 ) -> MatchResult:
-    """Deterministic candidate-to-job matching engine.
+    """Candidate-to-job matching engine with deterministic score fusion.
 
-    Evaluates a CandidateProfile against a JobProfile and returns a deterministic MatchResult.
-    Note: semantic_score is intentionally set to 0.0 as LLM semantic matching is deferred to Phase 8.
+    Evaluates CandidateProfile against JobProfile, incorporates optional LLM SemanticMatchResult,
+    and calculates final score deterministically:
+    final_score = 0.50 * skill_score + 0.25 * experience_score + 0.10 * education_score + 0.15 * semantic_score
 
     Args:
         candidate: CandidateProfile domain schema instance.
         job: JobProfile domain schema instance.
         candidate_id: Integer or string candidate identifier.
         job_id: Integer or string job identifier.
+        semantic_result: Optional SemanticMatchResult from LLM semantic evaluation.
 
     Returns:
         MatchResult domain schema instance.
@@ -251,13 +254,25 @@ def match_candidate_to_job(
     # --- 3. Education Matching ---
     edu_score = calculate_education_score(candidate, job)
 
-    # --- 4. Final Deterministic Score Calculation ---
-    # Baseline formula: 60% skill + 30% experience + 10% education
-    # Note: semantic_score is set to 0.0 (semantic matching deferred)
-    semantic_score = 0.0
-    final_score = round(max(0.0, min(100.0, 0.60 * skill_score + 0.30 * exp_score + 0.10 * edu_score)), 2)
+    # --- 4. Semantic Result & Deterministic Score Fusion ---
+    if semantic_result is not None:
+        semantic_score = round(max(0.0, min(100.0, float(semantic_result.semantic_score))), 2)
+        sem_strengths = semantic_result.strengths or []
+        sem_gaps = semantic_result.gaps or []
+        sem_justification = (semantic_result.justification or "").strip()
+    else:
+        semantic_score = 0.0
+        sem_strengths = []
+        sem_gaps = []
+        sem_justification = ""
+
+    # Phase 8 Score Fusion Formula:
+    # 50% skill + 25% experience + 10% education + 15% semantic
+    raw_final = 0.50 * skill_score + 0.25 * exp_score + 0.10 * edu_score + 0.15 * semantic_score
+    final_score = round(max(0.0, min(100.0, raw_final)), 2)
 
     # --- 5. Status Classification ---
+    # Required skill coverage strictly controls status thresholds regardless of semantic score
     req_coverage = (len(matched_required) / len(dedup_required)) if dedup_required else 1.0
 
     if final_score >= 80.0 and req_coverage >= 0.80:
@@ -301,13 +316,41 @@ def match_candidate_to_job(
     else:
         strengths.append("No explicit education requirement specified")
 
+    # Sanitize and append semantic strengths/gaps without allowing contradictions with missing required skills
+    missing_norm_set = {normalize_skill(s) for s in missing_required}
+    candidate_skills_norm = {normalize_skill(s) for s in candidate.skills}
+
+    for s_item in sem_strengths:
+        if not s_item or not s_item.strip():
+            continue
+        s_clean = s_item.strip()
+        s_norm = s_clean.lower()
+        # Reject semantic strengths that falsely claim candidate possesses a missing required skill
+        is_contradictory = False
+        for missing_s in missing_norm_set:
+            if missing_s not in candidate_skills_norm:
+                if f"has {missing_s}" in s_norm or f"proficient in {missing_s}" in s_norm or f"knows {missing_s}" in s_norm or f"experience with {missing_s}" in s_norm:
+                    is_contradictory = True
+                    break
+        if not is_contradictory and s_clean not in strengths:
+            strengths.append(s_clean)
+
+    for g_item in sem_gaps:
+        if g_item and g_item.strip():
+            g_clean = g_item.strip()
+            if g_clean not in gaps:
+                gaps.append(g_clean)
+
     justification_parts = [
-        f"Deterministic Match Evaluation ({status.value}):",
+        f"Match Evaluation ({status.value}):",
         f"Skill score is {skill_score}% (matched {len(matched_required)}/{len(dedup_required)} required skills).",
         f"Experience score is {exp_score}% (candidate has {candidate_years} years of experience).",
         f"Education score is {edu_score}%.",
-        "Semantic LLM scoring is currently deferred (baseline 0.0%).",
+        f"Semantic score is {semantic_score}%.",
     ]
+    if sem_justification:
+        justification_parts.append(f"Semantic Justification: {sem_justification}")
+
     justification = " ".join(justification_parts)
 
     score_breakdown = ScoreBreakdown(
