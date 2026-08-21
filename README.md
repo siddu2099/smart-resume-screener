@@ -2,14 +2,14 @@
 
 ## Overview
 
-The Smart Resume Screener is an intelligent academic application designed to automate candidate resume screening and evaluation against job descriptions. It leverages deterministic PDF text extraction, structured information extraction, Pydantic validation, database persistence, and LLM-driven semantic matching to deliver candidate match scoring and ranking.
+The Smart Resume Screener is an intelligent academic application designed to automate candidate resume screening and evaluation against job descriptions. It leverages deterministic PDF text extraction, structured information extraction, Pydantic validation, database persistence, LLM-driven semantic matching, FastAPI REST endpoints, and a Streamlit dashboard interface to deliver candidate match scoring and ranking.
 
 ## Architecture
 
 The end-to-end application pipeline follows a multi-stage flow:
 
 ```text
-Resume PDF
+Resume PDF Upload (Streamlit UI / POST /resumes)
     ↓
 PDF Extraction (PyMuPDF)
     ↓
@@ -19,7 +19,7 @@ CandidateProfile Schema
     ↓
 Database Persistence (SQLite / SQLAlchemy)
 
-Job Description
+Job Description Input (Streamlit UI / POST /jobs)
     ↓
 Job LLM Extraction (Ollama / qwen2.5:7b)
     ↓
@@ -27,7 +27,7 @@ JobProfile Schema
     ↓
 Database Persistence (SQLite / SQLAlchemy)
 
-Candidate + Job
+Candidate + Job Match Request (Streamlit UI / POST /matches)
     ↓
 Deterministic Skill / Experience / Education Matching
     +
@@ -37,7 +37,7 @@ Deterministic Score Fusion & Status Classification
     ↓
 MatchResult Schema
     ↓
-Database Persistence & Shortlist Ranking
+Database Persistence & Shortlist Ranking (GET /jobs/{job_id}/shortlist)
 ```
 
 ## Technology Stack
@@ -48,8 +48,9 @@ Database Persistence & Shortlist Ranking
 - **ORM / Database**: SQLAlchemy 2.x & SQLite
 - **PDF Extraction**: PyMuPDF (`fitz`)
 - **LLM Engine**: Ollama (`qwen2.5:7b`)
+- **HTTP Client**: `httpx`
 - **Frontend**: Streamlit
-- **Testing**: pytest & `httpx`
+- **Testing**: pytest
 
 ## Project Structure
 
@@ -99,13 +100,15 @@ smart-resume-screener/
 │       ├── __init__.py
 │       └── database.py     # Engine, session, and init_db setup
 │
+├── frontend/               # Streamlit frontend package
+│   ├── __init__.py
+│   ├── api_client.py       # Typed REST API client wrapper (httpx)
+│   └── dashboard.py        # Multi-tab Streamlit dashboard UI
+│
 ├── prompts/                # LLM extraction & matching prompt templates
 │   ├── resume_extraction.txt
 │   ├── job_extraction.txt
 │   └── semantic_matching.txt
-│
-├── frontend/               # Streamlit dashboard interface
-│   └── dashboard.py        # Streamlit UI
 │
 └── tests/                  # Automated test suite
     ├── __init__.py
@@ -116,8 +119,47 @@ smart-resume-screener/
     ├── test_llm_service.py # LLM service unit tests
     ├── test_matching.py    # Deterministic matcher tests
     ├── test_semantic_matcher.py # Semantic matcher unit tests
-    └── test_phase9_integration.py # End-to-end API integration tests
+    ├── test_phase9_integration.py # End-to-end API integration tests
+    └── test_api_client.py  # Frontend API client tests
 ```
+
+## How to Run
+
+### 1. Run Automated Test Suite (pytest)
+```powershell
+.venv\Scripts\python -m pytest
+```
+
+### 2. Local End-to-End Execution Workflow
+
+#### Terminal 1 — Start Local Ollama LLM Server
+Ensure Ollama is installed and run:
+```powershell
+ollama serve
+ollama pull qwen2.5:7b
+```
+
+#### Terminal 2 — Start FastAPI Backend
+```powershell
+.venv\Scripts\python -m uvicorn app.main:app --reload
+```
+Interactive API documentation will be available at `http://127.0.0.1:8000/docs`.
+
+#### Terminal 3 — Start Streamlit Dashboard UI
+```powershell
+# Optional: Set custom API base URL if backend runs on a different port/host
+# $env:API_BASE_URL="http://127.0.0.1:8000"
+
+.venv\Scripts\python -m streamlit run frontend/dashboard.py
+```
+The Streamlit dashboard will open automatically in your browser at `http://localhost:8501`.
+
+## Streamlit Dashboard Workflow
+
+1. **📤 Resume Upload**: Upload a candidate PDF resume. The UI sends the file to `POST /resumes` and displays candidate details, skills, experience, and education.
+2. **💼 Job Posting**: Paste a job description string. The UI sends text to `POST /jobs` and displays required vs. preferred skills, experience requirements, and responsibilities.
+3. **⚖️ Match Evaluation**: Input Candidate ID and Job ID. The UI calls `POST /matches` and displays score metrics, qualification status badge (Strong/Potential/Weak), matched/missing required skills, strengths, gaps, and evaluation justification.
+4. **🏆 Shortlist Dashboard**: Input Job ID. The UI calls `GET /jobs/{job_id}/shortlist` and displays candidate rankings strictly in backend-authoritative order.
 
 ## REST API Endpoints
 
@@ -127,36 +169,6 @@ smart-resume-screener/
 - `POST /matches`: Evaluate candidate against job using deterministic matching and LLM semantic alignment. Fuses scores and upserts match evaluation record. Returns `503 Service Unavailable` without writing DB records if semantic evaluation fails.
 - `GET /matches/{match_id}`: Retrieve persisted candidate-job match evaluation by match ID.
 - `GET /jobs/{job_id}/shortlist`: Retrieve ranked candidate shortlist for job posting, sorted deterministically by `final_score` DESC and `candidate_id` ASC as tie-breaker.
-
-## How to Run
-
-### 1. Run Automated Test Suite (pytest)
-```powershell
-.venv\Scripts\python -m pytest
-```
-
-### 2. Start Local Ollama LLM Server
-Ensure Ollama is installed and run:
-```powershell
-ollama serve
-ollama pull qwen2.5:7b
-```
-
-### 3. Start FastAPI Server
-```powershell
-.venv\Scripts\python -m uvicorn app.main:app --reload
-```
-Interactive API documentation will be available at `http://localhost:8000/docs`.
-
-## Deterministic Matching & LLM Semantic Score Fusion (Phase 8 & 9)
-
-- **Skill Score**: `0.80 * required_score + 0.20 * preferred_score` if preferred skills exist; `required_score` if preferred skills are absent.
-- **Experience Score**: `(candidate_years / required_years) * 100` (conservative parsing of explicit numeric/date durations; overlapping/contiguous date ranges merged).
-- **Education Score**: Binary `100.0` if degree matches degree/field keywords or requirement is unstated/empty; `0.0` otherwise (institution name excluded).
-- **LLM Semantic Score**: Evaluates candidate experience relevance and transferable skills (`prompts/semantic_matching.txt`).
-- **Deterministic Score Fusion**:
-  $$\text{final\_score} = 0.50 \times \text{skill\_score} + 0.25 \times \text{experience\_score} + 0.10 \times \text{education\_score} + 0.15 \times \text{semantic\_score}$$
-- **Status Classification**: Deterministically enforced by required skill coverage ($\ge 80\%$ for `STRONG`, $\ge 50\%$ for `POTENTIAL`). High semantic scores cannot compensate for missing required skills.
 
 ## Development Status
 
@@ -169,3 +181,4 @@ Interactive API documentation will be available at `http://localhost:8000/docs`.
 - **Phase 7 — Deterministic Candidate-Job Matching Engine**: Completed
 - **Phase 8 — LLM Semantic Analysis & Score Fusion**: Completed
 - **Phase 9 — Application API, Persistence Integration & Shortlisting**: Completed
+- **Phase 10 — Streamlit Dashboard & End-to-End UI**: Completed
